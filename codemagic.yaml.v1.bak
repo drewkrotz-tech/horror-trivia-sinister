@@ -20,9 +20,6 @@ workflows:
       - name: Add iOS platform (Capacitor)
         script: |
           npx cap add ios
-      - name: Generate iOS app icons from master
-        script: |
-          npx @capacitor/assets generate --ios
       - name: Sync Capacitor to iOS
         script: |
           npx cap sync ios
