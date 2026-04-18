@@ -1,20 +1,26 @@
 {
-  "name": "vite-react-typescript-starter",
+  "name": "horror-trivia-sinister",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cap:sync": "npm run build && npx cap sync",
+    "cap:add:ios": "npx cap add ios"
   },
   "dependencies": {
+    "@capacitor/core": "^7.5.0",
+    "@capacitor/ios": "^7.5.0",
+    "@capacitor/preferences": "^7.0.1",
     "firebase": "^12.12.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.5.0",
     "@eslint/js": "^9.39.4",
     "@types/node": "^24.12.2",
     "@types/react": "^19.2.14",
