@@ -10,9 +10,9 @@
 #        - App Store distribution provisioning profile for com.sinistertrivia.app
 #        - App Store Connect API key (.p8 + Key ID + Issuer ID)
 #      Integration names below MUST match what you set them to in Codemagic:
-#        - app_store_connect_key    <-- App Store Connect API key integration name
+#        - Codemagic TestFlight    <-- App Store Connect API key integration name
 #   2) Create the app record in App Store Connect, grab the numeric Apple App ID.
-#   3) Replace REPLACE_WITH_APP_STORE_CONNECT_APP_ID below with that number.
+#   3) Replace 6762561978 below with that number.
 #   4) Backup current codemagic.yaml as codemagic.yaml.v2.bak.
 #   5) Merge this file's ios-testflight workflow INTO codemagic.yaml so BOTH
 #      workflows live in one file (ios-unsigned-build stays as smoke test).
@@ -91,7 +91,7 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 90
     integrations:
-      app_store_connect: app_store_connect_key
+      app_store_connect: Codemagic TestFlight
     environment:
       node: 22
       xcode: 26.2
@@ -104,7 +104,7 @@ workflows:
         XCODE_SCHEME: "App"
         # Replace with numeric Apple App ID from App Store Connect once created.
         # Looks like: "6747123456"
-        APP_STORE_APP_ID: "REPLACE_WITH_APP_STORE_CONNECT_APP_ID"
+        APP_STORE_APP_ID: "6762561978"
     scripts:
       - name: Install npm dependencies
         script: |
