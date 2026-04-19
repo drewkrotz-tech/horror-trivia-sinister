@@ -109,3 +109,17 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+/* Lock viewport to prevent iOS rubber-band page scroll */
+html, body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  position: fixed;
+  overscroll-behavior: none;
+}
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
