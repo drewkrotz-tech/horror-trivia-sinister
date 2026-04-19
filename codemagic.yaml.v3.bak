@@ -1,0 +1,174 @@
+# =============================================================================
+# codemagic.yaml.v2-signed.draft
+# -----------------------------------------------------------------------------
+# DRAFT — parallel signed TestFlight workflow for Horror Trivia By Sinister.
+# Sits alongside the live codemagic.yaml. Does NOT run until integrated.
+#
+# ACTIVATION (when ready):
+#   1) Upload to Codemagic app settings (app id 69e3d8449a6c0fb1969cb4f4):
+#        - iOS Distribution certificate (.p12 + password)
+#        - App Store distribution provisioning profile for com.sinistertrivia.app
+#        - App Store Connect API key (.p8 + Key ID + Issuer ID)
+#      Integration names below MUST match what you set them to in Codemagic:
+#        - Codemagic TestFlight   <-- App Store Connect API key integration name
+#   2) Create the app record in App Store Connect, grab the numeric Apple App ID.
+#   3) Replace 6762561978 below with that number.
+#   4) Backup current codemagic.yaml as codemagic.yaml.v2.bak.
+#   5) Merge this file's ios-testflight workflow INTO codemagic.yaml so BOTH
+#      workflows live in one file (ios-unsigned-build stays as smoke test).
+#   6) Commit, push, trigger ios-testflight workflow in Codemagic UI.
+#
+# KEEPS: ios-unsigned-build (the current working simulator smoke test) — do NOT
+# delete it. It's our fallback if signing breaks.
+# =============================================================================
+
+workflows:
+
+  # -------------------------------------------------------------------
+  # EXISTING WORKFLOW — unchanged from current codemagic.yaml, kept here
+  # for reference. When you merge this file into the live yaml, leave
+  # the existing ios-unsigned-build block in place exactly as it is.
+  # --------------------------------------------------------------------
+  ios-unsigned-build:
+    name: iOS Unsigned Build (Pre-signing Smoke Test)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      node: 22
+      xcode: 26.2
+      cocoapods: default
+    vars:
+      XCODE_PROJECT: "ios/App/App.xcodeproj"
+      XCODE_SCHEME: "App"
+    scripts:
+      - name: Install npm dependencies
+        script: |
+          npm ci
+      - name: Build web app (Vite)
+        script: |
+          npm run build
+      - name: Add iOS platform (Capacitor)
+        script: |
+          npx cap add ios
+      - name: Generate iOS app icons from master
+        script: |
+          npx @capacitor/assets generate --ios
+      - name: Sync Capacitor to iOS
+        script: |
+          npx cap sync ios
+      - name: Install CocoaPods dependencies
+        script: |
+          cd ios/App && pod install
+      - name: Build unsigned .app for simulator (smoke test)
+        script: |
+          cd ios/App
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -derivedDataPath build \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+    artifacts:
+      - ios/App/build/Build/Products/**/*.app
+      - ios/App/build/**/*.dSYM.zip
+    publishing:
+      email:
+        recipients:
+          - drewkrotz@gmail.com
+        notify:
+          success: true
+          failure: true
+
+  # -------------------------------------------------------------------
+  # NEW SIGNED WORKFLOW — produces a TestFlight-ready .ipa and uploads
+  # it automatically. Requires Codemagic signing assets + App Store
+  # Connect API key integration (see header block at top of file).
+  # --------------------------------------------------------------------
+  ios-testflight:
+    name: iOS TestFlight Build (Signed)
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    integrations:
+      app_store_connect: Codemagic TestFlight
+    environment:
+      node: 22
+      xcode: 26.2
+      cocoapods: default
+    ios_signing:
+      distribution_type: app_store
+      bundle_identifier: com.sinistertrivia.app
+    vars:
+      XCODE_PROJECT: "ios/App/App.xcodeproj"
+      XCODE_SCHEME: "App"
+      # Replace with numeric Apple App ID from App Store Connect once created.
+      # Looks like: "6747123456"
+      APP_STORE_APP_ID: "6762561978"
+    scripts:
+      - name: Install npm dependencies
+        script: |
+          npm ci
+      - name: Build web app (Vite)
+        script: |
+          npm run build
+      - name: Add iOS platform (Capacitor)
+        script: |
+          npx cap add ios
+      - name: Generate iOS app icons from master
+        script: |
+          npx @capacitor/assets generate --ios
+      - name: Sync Capacitor to iOS
+        script: |
+          npx cap sync ios
+      - name: Install CocoaPods dependencies
+        script: |
+          cd ios/App && pod install
+      - name: Set up signing
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files \
+            com.sinistertrivia.app \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+      - name: Increment build number
+        script: |
+          cd ios/App
+          LATEST_BUILD_NUMBER=$(app-store-connect get-latest-app-store-build-number "$APP_STORE_APP_ID" || echo "0")
+          agvtool new-version -all $(($LATEST_BUILD_NUMBER + 1))
+      - name: Build signed .ipa for App Store
+        script: |
+          cd ios/App
+          xcode-project build-ipa \
+            --workspace App.xcworkspace \
+            --scheme App \
+            --config Release
+    artifacts:
+      - ios/App/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - ios/App/build/**/*.dSYM.zip
+    publishing:
+      email:
+        recipients:
+          - drewkrotz@gmail.com
+        notify:
+          success: true
+          failure: true
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        # Internal testers only. Default group name created automatically by
+        # App Store Connect. Rename here if you create a custom internal group.
+        beta_groups:
+          - App Store Connect Users
+        submit_to_app_store: false
+        # --- TO ADD EXTERNAL BETA TESTERS LATER ---
+        # Uncomment and fill in the group name once you've created an external
+        # group in App Store Connect. First external build triggers 24-48hr
+        # Apple beta review before testers can install.
+        #
+        # beta_groups:
+        #   - App Store Connect Users   # internal
+        #   - Early Slashers            # external (example name)
