@@ -10,7 +10,7 @@
 #        - App Store distribution provisioning profile for com.sinistertrivia.app
 #        - App Store Connect API key (.p8 + Key ID + Issuer ID)
 #      Integration names below MUST match what you set them to in Codemagic:
-#        - Codemagic TestFlight    <-- App Store Connect API key integration name
+#        - Codemagic TestFlight   <-- App Store Connect API key integration name
 #   2) Create the app record in App Store Connect, grab the numeric Apple App ID.
 #   3) Replace 6762561978 below with that number.
 #   4) Backup current codemagic.yaml as codemagic.yaml.v2.bak.
@@ -37,9 +37,9 @@ workflows:
       node: 22
       xcode: 26.2
       cocoapods: default
-      vars:
-        XCODE_PROJECT: "ios/App/App.xcodeproj"
-        XCODE_SCHEME: "App"
+    vars:
+      XCODE_PROJECT: "ios/App/App.xcodeproj"
+      XCODE_SCHEME: "App"
     scripts:
       - name: Install npm dependencies
         script: |
@@ -96,15 +96,15 @@ workflows:
       node: 22
       xcode: 26.2
       cocoapods: default
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.sinistertrivia.app
-      vars:
-        XCODE_PROJECT: "ios/App/App.xcodeproj"
-        XCODE_SCHEME: "App"
-        # Replace with numeric Apple App ID from App Store Connect once created.
-        # Looks like: "6747123456"
-        APP_STORE_APP_ID: "6762561978"
+    ios_signing:
+      distribution_type: app_store
+      bundle_identifier: com.sinistertrivia.app
+    vars:
+      XCODE_PROJECT: "ios/App/App.xcodeproj"
+      XCODE_SCHEME: "App"
+      # Replace with numeric Apple App ID from App Store Connect once created.
+      # Looks like: "6747123456"
+      APP_STORE_APP_ID: "6762561978"
     scripts:
       - name: Install npm dependencies
         script: |
@@ -127,10 +127,6 @@ workflows:
       - name: Set up signing
         script: |
           keychain initialize
-          app-store-connect fetch-signing-files \
-            com.sinistertrivia.app \
-            --type IOS_APP_STORE \
-            --create
           keychain add-certificates
           xcode-project use-profiles
       - name: Increment build number
@@ -164,7 +160,6 @@ workflows:
         beta_groups:
           - App Store Connect Users
         submit_to_app_store: false
-
         # --- TO ADD EXTERNAL BETA TESTERS LATER ---
         # Uncomment and fill in the group name once you've created an external
         # group in App Store Connect. First external build triggers 24-48hr
