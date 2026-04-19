@@ -219,8 +219,8 @@ async function getSlasherQuestions(roundNum, count=10, seed=null) {
     seenArr = JSON.parse(storedData || '[]'); 
   } catch(e) {}
   const seenSet = new Set(seenArr);
-  const thresholdCount = Math.floor(pool.length * 0.8);
-  // FIXED: Use >= instead of > for consistent 80% threshold
+  const thresholdCount = Math.floor(pool.length * 0.95);
+  // FIXED: Use >= instead of > for consistent 95% threshold
   if (seenSet.size >= thresholdCount) {
     console.log(`[Cycling] Reset triggered for difficulty ${roundNum}: ${seenSet.size}/${pool.length} seen (threshold: ${thresholdCount})`);
     seenSet.clear();
@@ -6695,8 +6695,8 @@ export default function App() {
         seenArr = JSON.parse(storedData || '[]'); 
       } catch(e) {}
       const seenSet = new Set(seenArr);
-      const thresholdCount = Math.floor(pool.length * 0.8);
-      // Reset when 80%+ of pool seen (FIXED: consistent threshold logic)
+      const thresholdCount = Math.floor(pool.length * 0.95);
+      // Reset when 95%+ of pool seen (FIXED: consistent threshold logic)
       if (seenSet.size >= thresholdCount) {
         console.log(`[LoadQs] Reset triggered for difficulty ${roundNum}: ${seenSet.size}/${pool.length} seen (threshold: ${thresholdCount})`);
         seenSet.clear();
