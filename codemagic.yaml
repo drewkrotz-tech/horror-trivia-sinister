@@ -1,34 +1,10 @@
 # =============================================================================
-# codemagic.yaml.v2-signed.draft
-# -----------------------------------------------------------------------------
-# DRAFT — parallel signed TestFlight workflow for Horror Trivia By Sinister.
-# Sits alongside the live codemagic.yaml. Does NOT run until integrated.
-#
-# ACTIVATION (when ready):
-#   1) Upload to Codemagic app settings (app id 69e3d8449a6c0fb1969cb4f4):
-#        - iOS Distribution certificate (.p12 + password)
-#        - App Store distribution provisioning profile for com.sinistertrivia.app
-#        - App Store Connect API key (.p8 + Key ID + Issuer ID)
-#      Integration names below MUST match what you set them to in Codemagic:
-#        - Codemagic TestFlight   <-- App Store Connect API key integration name
-#   2) Create the app record in App Store Connect, grab the numeric Apple App ID.
-#   3) Replace 6762561978 below with that number.
-#   4) Backup current codemagic.yaml as codemagic.yaml.v2.bak.
-#   5) Merge this file's ios-testflight workflow INTO codemagic.yaml so BOTH
-#      workflows live in one file (ios-unsigned-build stays as smoke test).
-#   6) Commit, push, trigger ios-testflight workflow in Codemagic UI.
-#
-# KEEPS: ios-unsigned-build (the current working simulator smoke test) — do NOT
-# delete it. It's our fallback if signing breaks.
+# codemagic.yaml - Horror Trivia By Sinister
+# Signed TestFlight workflow + unsigned smoke test.
 # =============================================================================
 
 workflows:
 
-  # -------------------------------------------------------------------
-  # EXISTING WORKFLOW — unchanged from current codemagic.yaml, kept here
-  # for reference. When you merge this file into the live yaml, leave
-  # the existing ios-unsigned-build block in place exactly as it is.
-  # --------------------------------------------------------------------
   ios-unsigned-build:
     name: iOS Unsigned Build (Pre-signing Smoke Test)
     instance_type: mac_mini_m2
@@ -78,11 +54,6 @@ workflows:
           success: true
           failure: true
 
-  # -------------------------------------------------------------------
-  # NEW SIGNED WORKFLOW — produces a TestFlight-ready .ipa and uploads
-  # it automatically. Requires Codemagic signing assets + App Store
-  # Connect API key integration (see header block at top of file).
-  # --------------------------------------------------------------------
   ios-testflight:
     name: iOS TestFlight Build (Signed)
     instance_type: mac_mini_m2
@@ -93,11 +64,11 @@ workflows:
       node: 22
       xcode: 26.2
       cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.sinistertrivia.app
       vars:
         APP_STORE_APP_ID: "6762561978"
-    ios_signing:
-      distribution_type: app_store
-      bundle_identifier: com.sinistertrivia.app
     scripts:
       - name: Install npm dependencies
         script: |
