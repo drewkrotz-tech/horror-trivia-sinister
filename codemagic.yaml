@@ -37,9 +37,6 @@ workflows:
       node: 22
       xcode: 26.2
       cocoapods: default
-    vars:
-      XCODE_PROJECT: "ios/App/App.xcodeproj"
-      XCODE_SCHEME: "App"
     scripts:
       - name: Install npm dependencies
         script: |
@@ -96,15 +93,11 @@ workflows:
       node: 22
       xcode: 26.2
       cocoapods: default
+      vars:
+        APP_STORE_APP_ID: "6762561978"
     ios_signing:
       distribution_type: app_store
       bundle_identifier: com.sinistertrivia.app
-    vars:
-      XCODE_PROJECT: "ios/App/App.xcodeproj"
-      XCODE_SCHEME: "App"
-      # Replace with numeric Apple App ID from App Store Connect once created.
-      # Looks like: "6747123456"
-      APP_STORE_APP_ID: "6762561978"
     scripts:
       - name: Install npm dependencies
         script: |
@@ -155,16 +148,6 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-        # Internal testers only. Default group name created automatically by
-        # App Store Connect. Rename here if you create a custom internal group.
         beta_groups:
           - App Store Connect Users
         submit_to_app_store: false
-        # --- TO ADD EXTERNAL BETA TESTERS LATER ---
-        # Uncomment and fill in the group name once you've created an external
-        # group in App Store Connect. First external build triggers 24-48hr
-        # Apple beta review before testers can install.
-        #
-        # beta_groups:
-        #   - App Store Connect Users   # internal
-        #   - Early Slashers            # external (example name)
