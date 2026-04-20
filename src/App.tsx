@@ -7048,7 +7048,7 @@ export default function App() {
       )}
       {scr === "slashersmash" && <SlasherBreakout onExit={() => { Au.p("close"); navTo("minigames"); }} onHighScore={(s) => setSbScore(Math.max(sbScore, s))} highScore={sbScore} />}
 
-      <div style={{width:"100%",maxWidth:420,minHeight:"100vh",display:"flex",flexDirection:"column",position:"relative",zIndex:3,padding:"0 22px 90px",margin:"0 auto"}}>
+      <div style={{width:"100%",maxWidth:420,minHeight:"100vh",display:"flex",flexDirection:"column",position:"relative",zIndex:3,padding:"0 22px 160px",margin:"0 auto"}}>
 
         {/* RISING EMBERS */}
       <Embers />
