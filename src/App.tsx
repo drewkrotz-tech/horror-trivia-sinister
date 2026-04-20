@@ -7798,7 +7798,7 @@ export default function App() {
 
       {scr === "slashersmash" && <SlasherBreakout onExit={() => { Au.p("close"); navTo("minigames"); }} onHighScore={(s) => setSbScore(Math.max(sbScore, s))} highScore={sbScore} />}
 
-      {/* FIXED BOTTOM BAR */}
+      {scr==="title" && (<>{/* FIXED BOTTOM BAR */}
       <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:10,display:"flex",flexDirection:"row",alignItems:"center",justifyContent:"center",gap:8,padding:"7px 16px calc(20px + env(safe-area-inset-bottom))",background:"transparent",borderTop:"none"}}>
         <button onClick={() => { setMu(m => { const next = !m; if (!next) { Au.stopM(); } else { Au.startM(scr === "game" ? rd : 1); } return next; }); handleYtTap(); }} style={{background:"transparent",border:"1px solid rgba(255,255,255,0.5)",borderRadius:8,color:"rgba(255,255,255,0.9)",fontSize:10,fontFamily:"'Inter',sans-serif",letterSpacing:1,padding:"6px 12px",display:"flex",alignItems:"center",gap:4,cursor:"pointer",boxShadow:"0 0 8px rgba(255,255,255,0.15)"}}>
           <span style={{fontSize:12}}>{mu?"🔊":"🔇"}</span> Music
@@ -7813,7 +7813,7 @@ export default function App() {
         <button onClick={() => { Au.p("continue"); navTo("about"); }} style={{background:"transparent",border:"1px solid rgba(255,255,255,0.5)",borderRadius:8,color:"rgba(255,255,255,0.9)",fontSize:10,fontFamily:"'Inter',sans-serif",letterSpacing:1,padding:"6px 12px",display:"flex",alignItems:"center",gap:4,cursor:"pointer",boxShadow:"0 0 8px rgba(255,255,255,0.15)"}}>
           <span style={{fontSize:12}}>ℹ️</span> About
         </button>
-      </div>
+      </div></>)}
     </div>
   );
 }
