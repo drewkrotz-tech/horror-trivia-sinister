@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, Component } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { QCLOUD } from './qcloud';
 
 // ── STORAGE ABSTRACTION (localStorage in browser, Capacitor Preferences when native) ──
 const Storage = {
@@ -196,7 +197,7 @@ function shuffleAllQuestions(arr) {
 }
 
 async function getSlasherQuestions(roundNum, count=10, seed=null) {
-  const pools = {1:[...Q1c1,...Q1c14,...Q1c23,...Q1c29,...Q1c3,...Q1c31,...Q1c38,...Q1c4,...Q1c42,...Q1c43,...Q1c49,...Q1c5,...Q1c54],2:[...Q2c0,...Q2c1,...Q2c17,...Q2c18,...Q2c2,...Q2c21,...Q2c28,...Q2c29,...Q2c3,...Q2c4,...Q2c40,...Q2c5,...Q2c9],3:[...Q3c10,...Q3c11,...Q3c12,...Q3c2,...Q3c21,...Q3c28,...Q3c30,...Q3c31,...Q3c32,...Q3c38,...Q3c39,...Q3c9],4:[...Q4c0,...Q4c1,...Q4c10,...Q4c11,...Q4c12,...Q4c13,...Q4c14,...Q4c15,...Q4c2,...Q4c22,...Q4c23,...Q4c24,...Q4c25,...Q4c26,...Q4c27,...Q4c28,...Q4c29,...Q4c3,...Q4c30,...Q4c31,...Q4c32,...Q4c33,...Q4c5,...Q4c6,...Q4c7,...Q4c8,...Q4c9,...Q4c34],5:[...Q5c0,...Q5c14,...Q5c17,...Q5c19,...Q5c2,...Q5c24,...Q5c25,...Q5c28,...Q5c29,...Q5c5,...Q5c6,...Q5c7]};
+  const pools = {1:[...Q1c1,...Q1c14,...Q1c23,...Q1c29,...Q1c3,...Q1c31,...Q1c38,...Q1c4,...Q1c42,...Q1c43,...Q1c49,...Q1c5,...Q1c54],2:[...Q2c0,...Q2c1,...Q2c17,...Q2c18,...Q2c2,...Q2c21,...Q2c28,...Q2c29,...Q2c3,...Q2c4,...Q2c40,...Q2c5,...Q2c9],3:[...Q3c10,...Q3c11,...Q3c12,...Q3c2,...Q3c21,...Q3c28,...Q3c30,...Q3c31,...Q3c32,...Q3c38,...Q3c39,...Q3c9],4:[...Q4c0,...Q4c1,...Q4c10,...Q4c11,...Q4c12,...Q4c13,...Q4c14,...Q4c15,...Q4c2,...Q4c22,...Q4c23,...Q4c24,...Q4c25,...Q4c26,...Q4c27,...Q4c28,...Q4c29,...Q4c3,...Q4c30,...Q4c31,...Q4c32,...Q4c33,...Q4c5,...Q4c6,...Q4c7,...Q4c8,...Q4c9,...Q4c34],5:[...Q5c0,...Q5c14,...Q5c17,...Q5c19,...Q5c2,...Q5c24,...Q5c25,...Q5c28,...Q5c29,...Q5c5,...Q5c6,...Q5c7,...QCLOUD]};
   const pool = pools[roundNum] || [];
   if (seed !== null) {
     let s = seed; const rand = () => { s = (s * 1664525 + 1013904223) & 0xffffffff; return (s >>> 0) / 0xffffffff; };
@@ -6674,7 +6675,7 @@ export default function App() {
       let pool = bundled;
       // v34: All 5 rounds fetch from Firestore and merge with local pool
       if (true) { // v34: was "roundNum >= 4" — now all rounds fetch from Firestore
-        try {
+        if (false) try {
           const q = query(collection(db, "questions"), where("d", "==", roundNum));
           const snap = await getDocs(q);
           if (!snap.empty) {
