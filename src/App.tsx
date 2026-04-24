@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, Component } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, getDocs, query, where, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { QCLOUD } from './qcloud';
 
 // ── STORAGE ABSTRACTION (localStorage in browser, Capacitor Preferences when native) ──
@@ -523,7 +523,32 @@ function BadgeRow({ badges }) {
 
 
 async function loadB() { try { const snap = await getDoc(doc(db, "leaderboards", "alltime")); return snap.exists() ? snap.data().scores : []; } catch(e) { console.error("loadB:", e); return []; } }
-async function saveS(nm, sc, cr, bg=[]) { try { const b = await loadB(); b.push({name: nm, score: sc, correct: cr, badges: bg, d: new Date().toISOString().slice(0,10)}); b.sort((a,c) => c.score - a.score); const t = b.slice(0,100); await setDoc(doc(db,"leaderboards","alltime"), {scores: t}); return t; } catch(e) { console.error("saveS:", e); return []; } }
+const __saveSInFlight = new Map();
+async function saveS(nm, sc, cr, bg=[]) {
+  const today = new Date().toISOString().slice(0,10);
+  const key = `${nm}|${sc}|${cr}|${today}`;
+  /* v49 concurrent-save guard: if an identical call is already in flight, return the existing promise
+     instead of starting a new read-modify-write cycle. This stops double-fires from useEffect/StrictMode
+     from producing duplicate leaderboard entries via the read-modify-write race. */
+  if (__saveSInFlight.has(key)) { return __saveSInFlight.get(key); }
+  const p = (async () => {
+    try {
+      const b = await loadB();
+      /* second-layer dedupe: even if two calls slip past the in-flight map (e.g., across remounts),
+         skip the write when Firestore already has an identical row for today. */
+      const dupeIdx = b.findIndex(e => e && e.name === nm && Number(e.score) === Number(sc) && Number(e.correct) === Number(cr) && e.d === today);
+      if (dupeIdx !== -1) { return b; }
+      b.push({name: nm, score: sc, correct: cr, badges: bg, d: today});
+      b.sort((a,c) => c.score - a.score);
+      const t = b.slice(0,100);
+      await setDoc(doc(db,"leaderboards","alltime"), {scores: t});
+      return t;
+    } catch(e) { console.error("saveS:", e); return []; }
+    finally { setTimeout(() => __saveSInFlight.delete(key), 5000); /* keep the lock for 5s after completion so a delayed duplicate call can't slip through */ }
+  })();
+  __saveSInFlight.set(key, p);
+  return p;
+}
 // v48: VS-wins leaderboard — tracks lifetime VS wins per name across all players globally.
 // Stored in leaderboards/vs-wins with shape { scores: [{name, wins, lastWin}] }.
 // Dedupes by name (merges all players with the same typed name into one row).
@@ -533,25 +558,30 @@ async function loadVsWinsB() {
     return snap.exists() && Array.isArray(snap.data().scores) ? snap.data().scores : [];
   } catch(e) { console.error("loadVsWinsB:", e); return []; }
 }
-// Credit a single win to the given name. Read-modify-write on the VS-wins doc.
-// Race tolerance: if two writes collide, one might overwrite the other, but at worst
-// we under-count by one win — not worth adding transaction complexity for.
+// Credit a single win to the given name using a Firestore transaction so cross-device
+// concurrent writes (e.g. you and your opponent both finishing a match at the same moment)
+// can't overwrite each other. Transactions retry automatically on conflict up to 5 times.
 async function creditVsWin(nm) {
   try {
     const cleanName = (nm || "Anonymous").trim().slice(0, 20);
-    const b = await loadVsWinsB();
     const now = new Date().toISOString();
-    const existing = b.find(e => e.name === cleanName);
-    if (existing) {
-      existing.wins = (existing.wins || 0) + 1;
-      existing.lastWin = now;
-    } else {
-      b.push({ name: cleanName, wins: 1, lastWin: now });
-    }
-    b.sort((a, c) => (c.wins || 0) - (a.wins || 0));
-    const t = b.slice(0, 100);
-    await setDoc(doc(db, "leaderboards", "vs-wins"), { scores: t });
-    return t;
+    const ref = doc(db, "leaderboards", "vs-wins");
+    const result = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      const b = (snap.exists() && Array.isArray(snap.data().scores)) ? [...snap.data().scores] : [];
+      const existing = b.find(e => e && e.name === cleanName);
+      if (existing) {
+        existing.wins = (existing.wins || 0) + 1;
+        existing.lastWin = now;
+      } else {
+        b.push({ name: cleanName, wins: 1, lastWin: now });
+      }
+      b.sort((a, c) => (c.wins || 0) - (a.wins || 0));
+      const t = b.slice(0, 100);
+      tx.set(ref, { scores: t });
+      return t;
+    });
+    return result;
   } catch(e) { console.error("creditVsWin:", e); return []; }
 }
 async function loadDailyB() { try { const k = "daily-" + new Date().toISOString().slice(0,10); const snap = await getDoc(doc(db,"leaderboards",k)); return snap.exists() ? snap.data().scores : []; } catch(e) { console.error("loadDailyB:", e); return []; } }
@@ -6374,6 +6404,7 @@ export default function App() {
   const [apiErr, setApiErr] = useState(null);
   const [topPlayer, setTopPlayer] = useState(null);
   const [roundWrong, setRoundWrong] = useState(0);
+  const roundWrongRef = useRef(0); // v49: sync ref so nx() can read latest value without waiting for React state flush
   const [myBadges, setMyBadges] = useState([]);
   const [showBadges, setShowBadges] = useState(false);
   const [roundTransition, setRoundTransition] = useState(false);
@@ -6447,15 +6478,33 @@ export default function App() {
   const pct = tm / mt;
   const tC = pct > 0.5 ? "#22c55e" : pct > 0.25 ? "#eab308" : "#ef4444";
 
-  useEffect(() => { loadB().then(b => { setBd(b); if (b.length > 0) setTopPlayer({name: b[0].name, score: b[0].score}); }); }, []);
+  useEffect(() => { loadB().then(b => { setBd(b); if (b.length > 0) setTopPlayer({name: b[0].name, score: b[0].score}); }); }, []); useEffect(() => { Storage.get("sinister-name").then(v => { if (v && typeof v === "string") { setNm(v); nmRef.current = v; } }); }, []);
   useEffect(() => { if (bd.length > 0) setTopPlayer({name: bd[0].name, score: bd[0].score}); }, [bd]);
   useEffect(() => { if (mu) Au.startM(1); return () => Au.stopM(); }, []);
-  useEffect(() => { if (scr === "gameover") {
-      if (!dailyModeRef.current) {
-        saveS(nm || "Anonymous", sc, tc).then(b => { if (b.length > 0) { setBd(b); setTopPlayer({name: b[0].name, score: b[0].score}); } });
-      } else {
-        saveDailyS(nm || "Anonymous", sc, tc).then(async db => { setDailyBd(db); await Storage.set("sinister-daily", new Date().toISOString().slice(0,10)); setDailyDone(true); setDailyMode(false); });
-      }
+  useEffect(() => {
+    if (scr === "gameover") {
+      /* v49: gameover path now computes badges and saves them with the score, matching the win-path pattern.
+         Previously badges were omitted from saveS on loss, so leaderboard entries showed no badge icons. */
+      (async () => {
+        if (!dailyModeRef.current) {
+          const stats = await updateBadgeStats({ gamesPlayed: 1, correctAnswers: tc, perfectGames: tc === 50 ? 1 : 0 });
+          const badges = await calcBadges(stats, null);
+          const b = await saveS(nm || "Anonymous", sc, tc, badges);
+          if (b.length > 0) {
+            setBd(b);
+            setTopPlayer({name: b[0].name, score: b[0].score});
+            const i = b.findIndex(e => e.name === (nm || "Anonymous") && e.score === sc);
+            const rank = i >= 0 ? i + 1 : null;
+            setMyBadges(await calcBadges(stats, rank));
+          }
+        } else {
+          const db = await saveDailyS(nm || "Anonymous", sc, tc);
+          setDailyBd(db);
+          await Storage.set("sinister-daily", new Date().toISOString().slice(0,10));
+          setDailyDone(true);
+          setDailyMode(false);
+        }
+      })();
     }
     if (scr === "game" && mu && Au._bgm && Au._bgm.paused && !Au._muted) {
       console.log('[Audio] Restarting background music during gameplay');
@@ -6484,7 +6533,7 @@ export default function App() {
   const goDaily = async () => {
     Au.p("continue"); Hap.medium();
     setDailyMode(true);
-    setSc(0); setSk(0); setBs(0); setRd(1); setQi(0); setTc(0); setRqs([]); setRoundWrong(0); scRef.current = 0; tcRef.current = 0;
+    setSc(0); setSk(0); setBs(0); setRd(1); setQi(0); setTc(0); setRqs([]); setRoundWrong(0); roundWrongRef.current = 0; scRef.current = 0; tcRef.current = 0;
     setScr("ri");
     const seed = getDailySeed();
     const pool = await getSlasherQuestions(3, 10, seed);
@@ -6501,7 +6550,7 @@ export default function App() {
     setVsMode(true); setVsStatus("playing"); setVsOpponentDone(false);
     // v48: allow the NEXT match's result to be credited to the session record
     vsMatchCountedRef.current = false;
-    setSc(0); setSk(0); setBs(0); setRd(1); setQi(0); setTc(0); setRoundWrong(0); scRef.current = 0; tcRef.current = 0;
+    setSc(0); setSk(0); setBs(0); setRd(1); setQi(0); setTc(0); setRoundWrong(0); roundWrongRef.current = 0; scRef.current = 0; tcRef.current = 0;
     setRqs(questions);
     setLoading(false);
     setScr("ri");
@@ -6658,7 +6707,7 @@ export default function App() {
     if (scr === "game" && !sh && rqs.length > 0) {
       tr.current = setInterval(() => {
         setTm(t => {
-          if (t <= 1) { clearInterval(tr.current); setSh(true); setWasRight(false); setSk(0); Au.p("no"); Hap.error(); setShk(true); setTimeout(() => setShk(false), 600); setFx("b"); setTimeout(() => setFx(null), 2000); const kfMsg = kF[Math.floor(Math.random() * kF.length)]; setKillFeed(kfMsg); setTimeout(() => setKillFeed(null), 2500); setRoundWrong(w => { const nw = w+1; if(nw>=5 && !vsMode){Au.stopM(); const saveName = nmRef.current || "Anonymous"; setTimeout(() => { if (!dailyModeRef.current) saveS(saveName, scRef.current, tcRef.current).then(b => { setBd(b); }); else saveDailyS(saveName, scRef.current, tcRef.current).then(db => setDailyBd(db)); }, 100); setTimeout(()=>setScr("gameover"),1800);} return nw; }); return 0; }
+          if (t <= 1) { clearInterval(tr.current); setSh(true); setWasRight(false); setSk(0); Au.p("no"); Hap.error(); setShk(true); setTimeout(() => setShk(false), 600); setFx("b"); setTimeout(() => setFx(null), 2000); const kfMsg = kF[Math.floor(Math.random() * kF.length)]; setKillFeed(kfMsg); setTimeout(() => setKillFeed(null), 2500); setRoundWrong(w => { const nw = w+1; roundWrongRef.current = nw; if(nw>=5 && !vsMode){Au.stopM(); /* v49: dup save removed - scr==="gameover" useEffect at line 6453 handles it */ setTimeout(()=>setScr("gameover"),1800);} return nw; }); return 0; }
           if (t <= 6) { Au.p("hb"); }
           return t - 1;
         });
@@ -6737,12 +6786,12 @@ export default function App() {
   const go = async () => {
     Au.p("click"); Hap.light(); if (mu) Au.startM(1);
     setVsMode(false); setVsStatus("idle"); setVsCode(""); setVsOpponent(null); setVsOpponentScore(0);
-    setSc(0); setSk(0); setBs(0); setRd(1); setQi(0); setTc(0); setRqs([]); setRoundWrong(0); scRef.current = 0; tcRef.current = 0;
+    setSc(0); setSk(0); setBs(0); setRd(1); setQi(0); setTc(0); setRqs([]); setRoundWrong(0); roundWrongRef.current = 0; scRef.current = 0; tcRef.current = 0;
     setScr("ri");
     await loadQs(1);
     setTimeout(() => Au.p("round"), 200);
   };
-  const sr2 = () => { if (loading || rqs.length === 0) return; Au.p("continue"); if (mu) { Au.startM(rd); } setQi(0); setSl(null); setSh(false); setWasRight(false); setTm(mt); setFx(null); setRoundWrong(0); setScr("game"); };
+  const sr2 = () => { if (loading || rqs.length === 0) return; Au.p("continue"); if (mu) { Au.startM(rd); } setQi(0); setSl(null); setSh(false); setWasRight(false); setTm(mt); setFx(null); setRoundWrong(0); roundWrongRef.current = 0; setScr("game"); };
   const pk = (idx) => {
     if (sh || sl !== null) { return; }
     clearInterval(tr.current); 
@@ -6765,21 +6814,10 @@ export default function App() {
       const kfMsg = kF[Math.floor(Math.random() * kF.length)]; setKillFeed(kfMsg); setTimeout(() => setKillFeed(null), 2500);
       setRoundWrong(w => {
         const newW = w + 1;
+        roundWrongRef.current = newW;
         if (newW >= 5 && !vsMode) {
           Au.stopM();
-          const saveName = nmRef.current || "Anonymous";
-          // Use a small delay so React state has settled
-          setTimeout(() => {
-            if (!dailyModeRef.current) {
-              saveS(saveName, scRef.current, tcRef.current).then(b => { setBd(b); });
-            } else {
-              saveDailyS(saveName, scRef.current, tcRef.current).then(async db => {
-                setDailyBd(db);
-                await Storage.set("sinister-daily", new Date().toISOString().slice(0,10)); setDailyDone(true);
-                setDailyMode(false);
-              });
-            }
-          }, 100);
+          /* v49: dup save removed - scr==="gameover" useEffect at line 6453 handles saveS and daily-mode cleanup (Storage.set + setDailyDone + setDailyMode) */
           setTimeout(() => setScr("gameover"), 1800);
         }
         return newW;
@@ -6788,6 +6826,14 @@ export default function App() {
   };
   const nx = async () => {
     Au.p("continue");
+    /* v49: if the user just hit their 5th wrong on the last question of this round, end the game
+       instead of advancing. Uses roundWrongRef because setRoundWrong from pk() may not have flushed
+       to the roundWrong state yet when Continue is clicked. */
+    if (roundWrongRef.current >= 5 && !vsMode) {
+      Au.stopM();
+      setScr("gameover");
+      return;
+    }
     if (qi + 1 >= rqs.length) {
       Au.stopM();
       if (rd >= 5 || dailyMode || vsMode) {
@@ -7071,7 +7117,7 @@ export default function App() {
               {/* ── NAME INPUT ── */}
               <input
                 value={nm}
-                onChange={e => { const v = e.target.value; if (containsProfanity(v)) return; setNm(v); nmRef.current = v; Au.p("type"); }}
+                onChange={e => { const v = e.target.value; if (containsProfanity(v)) return; setNm(v); nmRef.current = v; Storage.set("sinister-name", v); Au.p("type"); }}
                 placeholder="Enter your name..."
                 maxLength={20}
                 style={{width:"100%",padding:"12px 16px",background:"rgba(0,0,0,0.6)",border:"1px solid rgba(180,30,30,0.35)",borderRadius:10,color:"#e8ddd4",fontFamily:"'Inter',sans-serif",fontWeight:400,fontSize:17,textAlign:"center",outline:"none",letterSpacing:1.5}}
@@ -7356,7 +7402,7 @@ export default function App() {
             ) : (
               <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:16,width:"100%",maxWidth:300}}>
                 {/* Round label */}
-                <div style={{fontFamily:"'Inter',sans-serif",fontSize:11,letterSpacing:6,color:"rgba(204,34,0,0.8)",textTransform:"uppercase",fontFamily:"'Cinzel',serif"}}>{vsMode ? "⚔️ VS Match" : dailyMode ? "Quick Match" : `Round ${rd} of 5`}</div>
+                <div style={{fontFamily:"'Inter',sans-serif",fontSize:16,fontWeight:600,letterSpacing:7,color:"rgba(204,34,0,0.8)",textTransform:"uppercase",fontFamily:"'Cinzel',serif"}}>{vsMode ? "⚔️ VS Match" : dailyMode ? "Quick Match" : `Round ${rd} of 5`}</div>
 
                 {/* Big name */}
                 <div style={{fontFamily:"'Jolly Lodger',cursive",fontSize:vsMode?44:56,letterSpacing:4,color:"#e8ddd4",lineHeight:1,textShadow:"0 0 30px rgba(230,20,0,0.4),4px 5px 0px rgba(0,0,0,1)",textAlign:"center"}}>
